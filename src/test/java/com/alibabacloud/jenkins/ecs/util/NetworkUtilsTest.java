@@ -5,6 +5,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -15,48 +16,54 @@ public class NetworkUtilsTest {
     @Test
     public void autoGenerateSubnetTest() {
         List<String> otherVswCidrBlocks = Lists.newArrayList();
-        //多个子网测试
-        otherVswCidrBlocks.add("172.16.0.0/16");
-//        otherVswCidrBlocks.add("172.16.1.0/24");
-//        otherVswCidrBlocks.add("172.16.2.0/23");
-        String s = NetworkUtils.autoGenerateSubnet("172.16.0.0/12", otherVswCidrBlocks);
-        Assert.assertTrue(NetworkUtils.contains("172.16.0.0/12", s));
-        Assert.assertFalse(NetworkUtils.parentOrSubNetwork("172.16.0.0/24", s));
-        Assert.assertFalse(NetworkUtils.parentOrSubNetwork("172.16.2.0/23", s));
-        //一个子网测试
+        String vpcCidrBlock;
+        String subnet;
+
+        // Case 1 and Case 2: Single existing VSW
+        // Case 1: VPC-"172.16.0.0/12", other cidrBlocks-{"172.16.0.0/16"}
+        vpcCidrBlock = "172.16.0.0/12";
+        otherVswCidrBlocks = Arrays.asList("172.16.0.0/16");
+        subnet = NetworkUtils.autoGenerateSubnet(vpcCidrBlock, otherVswCidrBlocks);
+        checkExpectation(vpcCidrBlock,subnet,otherVswCidrBlocks);
+
+        // Case 2: VPC-"192.168.0.0/24", other cidrBlocks-{"192.168.0.0/26"}
+        vpcCidrBlock = "192.168.0.0/24";
+        otherVswCidrBlocks = Arrays.asList("192.168.0.0/26");
+        subnet = NetworkUtils.autoGenerateSubnet(vpcCidrBlock, otherVswCidrBlocks);
+        checkExpectation(vpcCidrBlock,subnet,otherVswCidrBlocks);
+
+        // Case 3: No existing VSWs
+        // Case 3: VPC-"192.168.0.0/24", other cidrBlocks-{}
+        vpcCidrBlock = "192.168.0.0/24";
         otherVswCidrBlocks = new ArrayList<>();
-        otherVswCidrBlocks.add("192.168.0.0/26");
-        s = NetworkUtils.autoGenerateSubnet("192.168.0.0/24", otherVswCidrBlocks);
-        Assert.assertTrue(NetworkUtils.contains("192.168.0.0/24", s));
-        Assert.assertFalse(NetworkUtils.parentOrSubNetwork(s,"192.168.0.0/26"));
-        //父网测试
-        otherVswCidrBlocks = new ArrayList<>();
-        otherVswCidrBlocks.add("192.0.0.0/8");
-        otherVswCidrBlocks.add("192.168.0.0/26");
-        otherVswCidrBlocks.add("192.168.0.64/26");
-        s = NetworkUtils.autoGenerateSubnet("192.168.0.0/24", otherVswCidrBlocks);
-        Assert.assertTrue(NetworkUtils.contains("192.168.0.0/24", s));
-        //不相关网络测试
-        otherVswCidrBlocks = new ArrayList<>();
-        otherVswCidrBlocks.add("172.16.0.128/16");
-        s = NetworkUtils.autoGenerateSubnet("192.168.0.0/24", otherVswCidrBlocks);
-        Assert.assertTrue(NetworkUtils.contains("192.168.0.0/24", s));
-        Assert.assertFalse(NetworkUtils.contains("172.16.0.128/16", s));
-        //空网络测试
-        otherVswCidrBlocks = new ArrayList<>();
-        s = NetworkUtils.autoGenerateSubnet("192.168.0.0/24", otherVswCidrBlocks);
-        Assert.assertTrue(NetworkUtils.contains("192.168.0.0/24", s));
-        //混合测试
-        //不相关网络测试
-        otherVswCidrBlocks = new ArrayList<>();
-        otherVswCidrBlocks.add("172.16.0.128/16");
-        otherVswCidrBlocks.add("192.0.0.0/4");
-        otherVswCidrBlocks.add("172.16.0.0/24");
-        otherVswCidrBlocks.add("172.16.1.0/23");
-        otherVswCidrBlocks.add("192.168.0.0/26");
-        s = NetworkUtils.autoGenerateSubnet("172.16.0.0/12", otherVswCidrBlocks);
-        Assert.assertTrue(NetworkUtils.contains("172.16.0.0/12", s));
-        Assert.assertFalse(NetworkUtils.contains("172.16.0.128/16", s));
-        Assert.assertFalse(NetworkUtils.contains("172.16.1.0/23", s));
+        subnet = NetworkUtils.autoGenerateSubnet(vpcCidrBlock, otherVswCidrBlocks);
+        checkExpectation(vpcCidrBlock,subnet,otherVswCidrBlocks);
+
+        // Case 4: Multiple existing VSWs and there is still available subnet which can be created
+        // Case 4: VPC-"172.16.0.0/12", other cidrBlocks-{"172.16.0.128/16","172.16.0.0/24","172.16.1.0/23","192.168.0.0/26"}
+        vpcCidrBlock = "172.16.0.0/12";
+        otherVswCidrBlocks = Arrays.asList("172.16.0.128/16","172.16.0.0/24","172.16.1.0/23","192.168.0.0/26");
+        subnet = NetworkUtils.autoGenerateSubnet(vpcCidrBlock, otherVswCidrBlocks);
+        checkExpectation(vpcCidrBlock,subnet,otherVswCidrBlocks);
+
+        //Case 5 and Case 6: All subnet possibilities are already occupied
+        //Case 5: VPC-"192.168.0.0/24",other cidrBlocks-{"192.168.0.0/25","192.168.0.128/25"}
+        vpcCidrBlock = "192.168.0.0/24";
+        otherVswCidrBlocks = Arrays.asList("192.168.0.0/25","192.168.0.128/25");
+        subnet = NetworkUtils.autoGenerateSubnet(vpcCidrBlock, otherVswCidrBlocks);
+        Assert.assertEquals(0,subnet.length());
+
+        //Case 6: VPC-"192.168.0.0/24",other cidrBlocks-{"192.168.0.0/26","192.168.0.128/25","192.168.0.64/26"}
+        vpcCidrBlock = "192.168.0.0/24";
+        otherVswCidrBlocks = Arrays.asList("192.168.0.0/26","192.168.0.128/25","192.168.0.64/26");
+        subnet = NetworkUtils.autoGenerateSubnet(vpcCidrBlock, otherVswCidrBlocks);
+        Assert.assertEquals(0,subnet.length());
+    }
+
+    private void checkExpectation(String vpcCidrBlock, String subnet, List<String> otherVswCidrBlocks) {
+        Assert.assertTrue(NetworkUtils.contains(vpcCidrBlock,subnet));
+        for (String vswCidrBlock : otherVswCidrBlocks) {
+            Assert.assertFalse(NetworkUtils.contains(subnet, vswCidrBlock));
+        }
     }
 }
